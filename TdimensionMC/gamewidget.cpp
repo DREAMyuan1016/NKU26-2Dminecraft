@@ -1682,6 +1682,219 @@ void GameWidget::carveWideTunnel(const QPoint &from, const QPoint &to, int radiu
     }
 }
 
+void GameWidget::initializeWorld()
+{
+
+
+    m_worldRng.seed(kFixedWorldSeed);  // 使用固定种子保证每次运行生成的地形完全一致，方便调试与复现
+
+    // 清空所有方块、火把、液体、传送门、特殊区块的记录
+    m_dirtBlocks.clear();
+    m_oreBlocks.clear();
+    m_treeBlocks.clear();
+    m_torchTiles.clear();
+    m_waterTiles.clear();
+    m_lavaTiles.clear();
+    m_portals.clear();
+    m_purpleTiles.clear();
+    m_purpleBeamTiles.clear();
+    m_largeCavernCenters.clear();
+
+    m_surfaceRows.fill(0, kWorldColumns);// 初始化地表行数组，稍后填充每一列的地表高度
+
+
+
+    for (int column = 0; column < kWorldColumns; ++column)
+    {
+        // 遍历世界每一列
+        // 使用两个不同频率的正弦波叠加，制造自然的山丘与低谷,第一个波频率较高(0.12)振幅2，第二个波频率较低(0.045)振幅1，在基准地表行 kSurfaceRow 上叠加
+        const int undulatingSurface = kSurfaceRow + qRound(qSin(column * 0.12) * 2.0 + qSin(column * 0.045) * 1.0);
+
+        m_surfaceRows[column] = undulatingSurface; // 记录该列的地表高度
+
+        // 从地表向下填充方块直到世界底部
+        for (int row = undulatingSurface; row < kWorldRows; ++row)
+        {
+            DirtBlock::Kind blockKind = DirtBlock::Kind::Stone; // 默认石头
+            if (row == undulatingSurface) {
+                blockKind = DirtBlock::Kind::Grassdirt; // 最顶层是草方块
+            } else if (row < undulatingSurface + 4) {
+                blockKind = DirtBlock::Kind::Dirt;      // 下方3格是泥土
+            }
+
+            m_dirtBlocks.insert(tileKey(column, row), DirtBlock(blockKind));
+
+        }
+    }
+    // 三个不同深度的洞穴群：地表、地狱、深层
+    const QVector<QPoint> surfaceCenters = {
+        QPoint(18, kSurfaceRow + 16), QPoint(42, kSurfaceRow + 18), QPoint(66, kSurfaceRow + 20),
+        QPoint(90, kSurfaceRow + 21), QPoint(108, kSurfaceRow + 19)
+    };
+    const QVector<QPoint> netherCenters = {
+        QPoint(18, kSurfaceRow + 58), QPoint(42, kSurfaceRow + 61), QPoint(66, kSurfaceRow + 64),
+        QPoint(90, kSurfaceRow + 67), QPoint(108, kSurfaceRow + 70), QPoint(132, kSurfaceRow + 68),
+        QPoint(154, kSurfaceRow + 66)
+    };
+    const QVector<QPoint> forbiddenCenters = {
+        QPoint(18, kSurfaceRow + 110), QPoint(42, kSurfaceRow + 113), QPoint(66, kSurfaceRow + 116),
+        QPoint(90, kSurfaceRow + 119), QPoint(108, kSurfaceRow + 122)
+    };
+
+
+
+    for (int i = 0; i < surfaceCenters.size(); ++i)
+    {
+        carveEllipseCavern(surfaceCenters.at(i), 14 + (i % 2), 8 + (i % 3), 0.32);    // 半径随中心点微调，产生大小差异
+    }// 为每个中心点生成椭圆形洞穴，边缘带噪声模拟自然形态
+
+
+
+    for (int i = 0; i < forbiddenCenters.size(); ++i) {
+        carveEllipseCavern(forbiddenCenters.at(i), 14 + (i % 2), 8 + (i % 3), 0.22);
+    }
+
+    // 用宽隧道连接各个洞穴，形成探索路径
+    for (int i = 0; i + 1 < surfaceCenters.size(); ++i) {
+        carveWideTunnel(surfaceCenters.at(i), surfaceCenters.at(i + 1), 6);
+    }
+    for (int i = 0; i + 1 < netherCenters.size(); ++i) {
+        carveWideTunnel(netherCenters.at(i), netherCenters.at(i + 1), 6);
+    }
+    for (int i = 0; i + 1 < forbiddenCenters.size(); ++i) {
+        carveWideTunnel(forbiddenCenters.at(i), forbiddenCenters.at(i + 1), 8);
+    }
+    // 创建一些特殊连接隧道，丰富地形
+    const QPoint rampStart(10, kSurfaceRow + 10);
+    const QPoint rampEnd(90, kSurfaceRow + 50);
+    carveWideTunnel(rampStart, rampEnd, 8);
+    carveWideTunnel(QPoint(28, kSurfaceRow + 18), QPoint(58, kSurfaceRow + 24), 6);
+    carveWideTunnel(QPoint(54, kSurfaceRow + 26), QPoint(84, kSurfaceRow + 36), 6);
+    carveWideTunnel(QPoint(78, kSurfaceRow + 39), QPoint(154, kSurfaceRow + 66), 6);
+
+
+
+    const int fillColumn = 58;
+    for (int row = kSurfaceRow + 69; row <= kSurfaceRow + 100; ++row) {
+        int key = tileKey(fillColumn, row);
+        if (!m_dirtBlocks.contains(key) && !m_oreBlocks.contains(key) && !m_waterTiles.contains(key))
+            m_dirtBlocks.insert(key, DirtBlock(DirtBlock::Kind::Stone));
+    }
+    // 修复竖井区：在特定列填实石头，防止生成过大的空洞影响游戏流程
+
+    // 继续生成更多连接隧道
+    carveWideTunnel(QPoint(58, kSurfaceRow + 100), forbiddenCenters.front(), 8);
+    carveWideTunnel(QPoint(98, kSurfaceRow + 72), netherCenters.back(), 6);
+    carveWideTunnel(QPoint(100, kSurfaceRow + 118), forbiddenCenters.at(2), 8);
+    carveWideTunnel(QPoint(8, kSurfaceRow + 22), QPoint(160, kSurfaceRow + 25), 4);
+    carveWideTunnel(QPoint(8, kSurfaceRow + 116), QPoint(116, kSurfaceRow + 119), 5);
+
+    // 定义地表到浅层、浅层到深层的传送门区域与落地坐标
+    const Portal surfacePortal { QRect(92, kSurfaceRow + 47, 1, 0), QPoint(84, kSurfaceRow + 59), DepthLayer::ShallowCavern };
+    const Portal netherPortal { QRect(56, kSurfaceRow + 100, 4, 1), QPoint(50, kSurfaceRow + 109), DepthLayer::DeepCavern };
+    m_portals.append(surfacePortal);
+    m_portals.append(netherPortal);
+
+    // 浅层额外开挖几个通道，增加战斗和探索空间
+    carveWideTunnel(QPoint(10, kSurfaceRow + 55), QPoint(160, kSurfaceRow + 72), 6);
+    carveWideTunnel(QPoint(160, kSurfaceRow + 60), QPoint(10, kSurfaceRow + 75), 6);
+    carveEllipseCavern(QPoint(84, kSurfaceRow + 65), 10, 6, 0.30);
+    carveEllipseCavern(QPoint(124, kSurfaceRow + 68), 12, 7, 0.28);
+
+    // 确保传送门区域是实体石头，并清理掉落点周围，防止玩家卡住
+    for (const Portal &portal : std::as_const(m_portals))
+    {
+        for (int row = portal.tiles.top(); row <= portal.tiles.bottom(); ++row)
+        {
+            for (int column = portal.tiles.left(); column <= portal.tiles.right(); ++column)
+            {
+                const int key = tileKey(column, row);
+                m_waterTiles.remove(key);
+                m_lavaTiles.remove(key);
+                m_oreBlocks.remove(key);
+                m_dirtBlocks.insert(key, DirtBlock(DirtBlock::Kind::Stone));
+            }
+        }
+         // 传送门所占方块区域内全部替换为石头
+
+
+        for (int dx = -2; dx <= 2; ++dx)
+        {
+            const int floorColumn = qBound(0, portal.safeTile.x() + dx, kWorldColumns - 1);
+            const int floorRow = qBound(0, portal.safeTile.y() + 1, kWorldRows - kBedrockThickness - 1);
+            m_dirtBlocks.insert(tileKey(floorColumn, floorRow), DirtBlock(DirtBlock::Kind::Stone));
+            m_lavaTiles.remove(tileKey(floorColumn, floorRow));
+            m_dirtBlocks.remove(tileKey(floorColumn, portal.safeTile.y()));
+            m_lavaTiles.remove(tileKey(floorColumn, portal.safeTile.y()));
+        }// 在落地点的 y+1 层铺石头，并清空落地那一层，避免卡墙
+    }
+    // 在世界最底部（倒数第2层起）塞满石头，作为不可破坏的边界
+    for (int column = 0; column < kWorldColumns; ++column)
+    {
+        for (int row = kWorldRows - kBedrockThickness - 2; row < kWorldRows - kBedrockThickness; ++row) {
+            const int key = tileKey(column, row);
+            m_waterTiles.remove(key);
+            m_lavaTiles.remove(key);
+            m_oreBlocks.remove(key);
+            m_dirtBlocks.insert(key, DirtBlock(DirtBlock::Kind::Stone));
+        }
+    }
+    for (int column = 0; column < kWorldColumns; ++column) {
+        for (int row = kWorldRows - kBedrockThickness; row < kWorldRows; ++row) {
+            const int key = tileKey(column, row);
+            m_waterTiles.remove(key);
+            m_lavaTiles.remove(key);
+            m_oreBlocks.remove(key);
+            m_dirtBlocks.insert(key, DirtBlock(DirtBlock::Kind::Stone));
+        }
+    }
+
+
+    // 传送门。 入口位置：浅层最左侧洞穴上方
+    const QPoint portalOrigin(16, kSurfaceRow + 53);
+    m_netherPortalOrigin = portalOrigin;
+
+    // 挖空入口及上方区域，为紫色光束清路
+    for (int dx = 0; dx < 5; ++dx)
+    {
+        for (int dy = -3; dy <= 0; ++dy)
+        {
+            int col = portalOrigin.x() + dx;
+            int row = portalOrigin.y() + dy;
+            if (col < 0 || col >= kWorldColumns || row < 0 || row >= kWorldRows - kBedrockThickness)
+                continue;
+            int key = tileKey(col, row);
+            m_dirtBlocks.remove(key);
+            m_oreBlocks.remove(key);
+            m_treeBlocks.remove(key);
+            m_waterTiles.remove(key);
+            m_lavaTiles.remove(key);
+        }
+    }
+
+    // 向下挖深井，直达深层顶部
+    const int pitStartRow = portalOrigin.y();
+    const int pitEndRow = kSurfaceRow + 115;
+    for (int dx = 0; dx < 5; ++dx)
+    {
+        for (int row = pitStartRow + 1; row <= pitEndRow; ++row)
+        {
+            int col = portalOrigin.x() + dx;
+            int key = tileKey(col, row);
+            m_dirtBlocks.remove(key);
+            m_oreBlocks.remove(key);
+            m_treeBlocks.remove(key);
+            m_waterTiles.remove(key);
+            m_lavaTiles.remove(key);
+        }
+    }
+
+
+
+    return;
+}
+
+
 
 
 
@@ -1850,7 +2063,7 @@ void GameWidget::drawWorld(QPainter &painter)
             if (m_torchTiles.contains(tileKey(column, row))) {
                 drawTorch(painter, currentTile);
             }
-        }   
+        }
     }
 
     for (int row = minRow; row <= maxRow; ++row) {
