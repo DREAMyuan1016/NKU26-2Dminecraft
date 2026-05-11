@@ -1,0 +1,16 @@
+<RCC>
+    <qresource prefix="/">
+        <file>assets/blocks/dirt.png</file>
+        <file>assets/blocks/stone.png</file>
+        <file>assets/blocks/gold.png</file>
+        <file>assets/blocks/emerald.png</file>
+        <file>assets/blocks/redstone.png</file>
+        <file>assets/blocks/diamond.png</file>
+        <file>assets/blocks/trunk.png</file>
+        <file>assets/blocks/leaves.png</file>
+        <file>assets/blocks/grassdirt.png</file>
+        <file>assets/blocks/kuangdong.png</file>
+        <file>assets/blocks/backgroundFirst.png</file>
+        <file>assets/blocks/backgroundSecond.png</file>
+    </qresource>
+</RCC>
