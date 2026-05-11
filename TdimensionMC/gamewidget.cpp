@@ -1726,6 +1726,14 @@ void GameWidget::initializeWorld()
 
         }
     }
+
+
+
+
+
+
+
+
     // 三个不同深度的洞穴群：地表、地狱、深层
     const QVector<QPoint> surfaceCenters = {
         QPoint(18, kSurfaceRow + 16), QPoint(42, kSurfaceRow + 18), QPoint(66, kSurfaceRow + 20),
@@ -1764,6 +1772,20 @@ void GameWidget::initializeWorld()
     for (int i = 0; i + 1 < forbiddenCenters.size(); ++i) {
         carveWideTunnel(forbiddenCenters.at(i), forbiddenCenters.at(i + 1), 8);
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     // 创建一些特殊连接隧道，丰富地形
     const QPoint rampStart(10, kSurfaceRow + 10);
     const QPoint rampEnd(90, kSurfaceRow + 50);
@@ -1788,6 +1810,16 @@ void GameWidget::initializeWorld()
     carveWideTunnel(QPoint(100, kSurfaceRow + 118), forbiddenCenters.at(2), 8);
     carveWideTunnel(QPoint(8, kSurfaceRow + 22), QPoint(160, kSurfaceRow + 25), 4);
     carveWideTunnel(QPoint(8, kSurfaceRow + 116), QPoint(116, kSurfaceRow + 119), 5);
+
+
+
+
+
+
+
+
+
+
 
     // 定义地表到浅层、浅层到深层的传送门区域与落地坐标
     const Portal surfacePortal { QRect(92, kSurfaceRow + 47, 1, 0), QPoint(84, kSurfaceRow + 59), DepthLayer::ShallowCavern };
@@ -1828,6 +1860,15 @@ void GameWidget::initializeWorld()
             m_lavaTiles.remove(tileKey(floorColumn, portal.safeTile.y()));
         }// 在落地点的 y+1 层铺石头，并清空落地那一层，避免卡墙
     }
+
+
+
+
+
+
+
+
+
     // 在世界最底部（倒数第2层起）塞满石头，作为不可破坏的边界
     for (int column = 0; column < kWorldColumns; ++column)
     {
@@ -1848,6 +1889,9 @@ void GameWidget::initializeWorld()
             m_dirtBlocks.insert(key, DirtBlock(DirtBlock::Kind::Stone));
         }
     }
+
+
+
 
 
     // 传送门。 入口位置：浅层最左侧洞穴上方
@@ -1889,7 +1933,179 @@ void GameWidget::initializeWorld()
         }
     }
 
+    // 在入口所在行填充一排石头，供后续紫色方块覆盖
+    for (int dx = 0; dx < 5; ++dx)
+    {
+        int col = portalOrigin.x() + dx;
+        int key = tileKey(col, portalOrigin.y());
+        m_dirtBlocks.insert(key, DirtBlock(DirtBlock::Kind::Stone));
+    }
 
+
+
+
+
+
+
+
+
+    // 黑方块传送门
+    const int blackRow = 68;
+    const int blackColStart = 110;
+    const int blackColEnd = 167;
+
+    m_blackPortalOrigin = QPoint(blackColStart, blackRow);
+
+    // 底座：一整排的黑色方块，构成传送带
+    for (int col = blackColStart; col <= blackColEnd; ++col)
+    {
+        int key = tileKey(col, blackRow);
+        m_dirtBlocks.remove(key);
+        m_oreBlocks.remove(key);
+        m_treeBlocks.remove(key);
+        m_waterTiles.remove(key);
+        m_lavaTiles.remove(key);
+        m_dirtBlocks.insert(key, DirtBlock(DirtBlock::Kind::Black));
+        m_blackPortalTiles.insert(key);   // 标记为传送门方块
+    }
+
+    // 向下挖空竖井，直到第三层顶部附近
+    const int targetRow = 88;
+    for (int col = blackColStart; col <= blackColEnd; ++col) {
+        for (int row = blackRow + 1; row <= targetRow; ++row) {
+            int key = tileKey(col, row);
+            m_dirtBlocks.remove(key);
+            m_oreBlocks.remove(key);
+            m_treeBlocks.remove(key);
+            m_waterTiles.remove(key);
+            m_lavaTiles.remove(key);
+            m_blackPortalBeamTiles.insert(key);
+        }
+    }
+
+    // 在竖井底部生成石头平台，并向上清空3格，确保安全着陆
+    const int landingRow = targetRow;
+    for (int col = blackColStart; col <= blackColEnd; ++col)
+    {
+        int key = tileKey(col, landingRow); // 放置石头平台
+        m_dirtBlocks.insert(key, DirtBlock(DirtBlock::Kind::Stone));// 平台上方3格清空所有方块和流体
+        for (int clearRow = landingRow - 1; clearRow >= landingRow - 3; --clearRow)
+        {
+            int cKey = tileKey(col, clearRow);
+            m_dirtBlocks.remove(cKey);
+            m_oreBlocks.remove(cKey);
+            m_treeBlocks.remove(cKey);
+            m_lavaTiles.remove(cKey);
+        }
+    }
+
+
+
+
+
+    generateNetherTransitionWalls();
+
+    // 清理出生点附近一个固定区域，确保视野开阔
+    for (int col = 9; col <= 12; ++col)
+    {
+        for (int row = 18; row <= 26; ++row)
+        {
+            int key = tileKey(col, row);
+            m_dirtBlocks.remove(key);
+            m_oreBlocks.remove(key);
+            m_treeBlocks.remove(key);
+            m_waterTiles.remove(key);
+            m_lavaTiles.remove(key);
+            m_torchTiles.remove(key);
+        }
+    }
+    // 地狱生物群系
+    // 计算地狱区域的行范围（浅层）
+    const int netherTopRow = kSurfaceRow + kNetherTopOffsetRows;
+    const int netherBottomRow = kSurfaceRow + kNetherBottomOffsetRows;
+
+    // 将该区域的现有方块替换为地狱岩、岩浆块或石英
+    for (int col = 0; col < kWorldColumns; ++col)
+    {
+        for (int row = netherTopRow; row <= netherBottomRow; ++row)
+        {
+            const int key = tileKey(col, row);
+            m_magmaTiles.remove(key);
+            m_waterTiles.remove(key);
+
+            auto it = m_dirtBlocks.find(key);
+            if (it == m_dirtBlocks.end()) continue;   // 空气跳过
+
+            const DirtBlock::Kind oldKind = it->kind();
+            if (oldKind == DirtBlock::Kind::Black) continue; // 保护黑方块
+
+            // 上部(<=73)使用随机混合，下部只使用地狱岩
+            const DirtBlock::Kind newKind = (row <= 73)
+                                            ? randomNetherBlockKind(m_worldRng)
+                                            : DirtBlock::Kind::Netherrack;
+            m_dirtBlocks.insert(key, DirtBlock(newKind));
+            if (newKind == DirtBlock::Kind::Magma)
+            {
+                m_magmaTiles.insert(key);
+            }
+        }
+    }
+
+    //生成熔岩池
+    const int lavaPoolCount = 18;
+    for (int i = 0; i < lavaPoolCount; ++i) {
+        // 随机位置和大小
+        const int centerColumn = randomBetween(6, kWorldColumns - 6);
+        const int centerRow = randomBetween(netherTopRow + 4, netherBottomRow - 2);
+        const int radiusX = randomBetween(2, 5);
+        const int radiusY = randomBetween(1, 3);
+
+        // 检查熔岩池底部和四周是否被方块包围，来防止溢出现象
+        auto solidForLavaBasin = [this](int column, int row) {
+            if (column < 0 || column >= kWorldColumns || row < 0 || row >= kWorldRows)  {return false;}
+            const int key = tileKey(column, row);
+            return m_dirtBlocks.contains(key) || m_oreBlocks.contains(key);
+        };
+
+        bool enclosedBasin = true;
+        for (int column = centerColumn - radiusX; column <= centerColumn + radiusX && enclosedBasin; ++column)
+            enclosedBasin = solidForLavaBasin(column, centerRow + radiusY + 1);
+        for (int row = centerRow - radiusY; row <= centerRow + radiusY && enclosedBasin; ++row)
+            enclosedBasin = solidForLavaBasin(centerColumn - radiusX - 1, row)
+                         && solidForLavaBasin(centerColumn + radiusX + 1, row);
+        if (!enclosedBasin) continue;
+
+        // 在形状内挖掉方块并填充熔岩
+        for (int row = centerRow - radiusY; row <= centerRow + radiusY; ++row)
+        {
+            for (int column = centerColumn - radiusX; column <= centerColumn + radiusX; ++column)
+            {
+                if (column < 0 || column >= kWorldColumns || row < netherTopRow || row > netherBottomRow) continue;
+
+                // 使用椭圆形状控制，越靠近边缘越可能保留方块
+                const double normalizedX = double(column - centerColumn) / qMax(1, radiusX);
+                const double normalizedY = double(row - centerRow) / qMax(1, radiusY);
+                const double shape = normalizedX * normalizedX + normalizedY * normalizedY;
+                if (shape > 1.2) continue;
+
+                const int key = tileKey(column, row);
+                // 保护特殊方块（树木、矿石、各种传送门/光束瓷砖）
+                if (m_treeBlocks.contains(key) || m_oreBlocks.contains(key) || m_blackPortalTiles.contains(key)
+                    || m_blackPortalBeamTiles.contains(key) || m_netherPortalTiles.contains(key)
+                    || m_netherPortalBeamTiles.contains(key))
+                    continue;
+
+                //  概率保留方块，制造不规则边缘
+                if (shape > 0.95 && randomChance(35))
+                    continue;
+
+                // 移除原有方块，加入熔岩
+                m_dirtBlocks.remove(key);
+                m_waterTiles.remove(key);
+                m_lavaTiles.insert(key);
+            }
+        }
+    }
 
     return;
 }
