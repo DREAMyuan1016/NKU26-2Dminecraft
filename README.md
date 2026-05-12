@@ -5,7 +5,7 @@
 ![Qt](https://img.shields.io/badge/Qt-5.15%20%7C%206.x-green)
 ![License](https://img.shields.io/badge/license-MIT-yellow)
 
-**Dimensional Mystery** 是一款基于 Qt 的 2D 像素风沙盒冒险游戏。玩家在随机生成的多层世界中探索、挖掘、战斗，逐层深入击败敌人，最终挑战深层 Boss 以完成游戏。
+**Dimensional Mystery** 是一款基于 Qt 的 2D 像素风沙盒冒险游戏，以minecraft为蓝本创作。玩家在随机生成的多层世界中探索、挖掘、战斗，逐层深入击败敌人，最终挑战深层 Boss 以完成游戏。
 本项目为高级语言程序设计大作业，非商业用途。
 
 ---
